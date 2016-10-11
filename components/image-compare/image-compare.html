@@ -1,0 +1,366 @@
+<link rel="import" href="../polymer/polymer.html">
+
+<link rel="import" href="../paper-slider/paper-slider.html">
+<!--
+`image-compare`
+Image comparison element
+
+@demo demo/index.html
+-->
+
+<dom-module id="image-compare">
+	<template strip-whitespace>
+		<style>
+			:host {
+				display: block;
+				overflow: auto;
+			}
+
+			:host[active] {
+				cursor: col-resize;
+			}
+
+			#image {
+				display: block;
+				position: relative;
+				overflow: hidden;
+				line-height: 0;
+				contain: layout;
+				user-select: none;
+			}
+
+			:host,
+			img,
+			span {
+				-webkit-user-select: none;
+				-moz-user-select: none;
+				user-select: none;
+			}
+
+			#src {
+				width: 100%;
+				vertical-align: baseline;
+				user-select: none;
+			}
+
+			img {
+				image-rendering: optimizeSpeed;
+				image-rendering: -moz-crisp-edges;
+				image-rendering: -o-crisp-edges;
+				image-rendering: -webkit-optimize-contrast;
+				image-rendering: pixelated;
+				image-rendering: optimize-contrast;
+				-ms-interpolation-mode: nearest-neighbor;
+			}
+
+			.mask {
+				/* Force Hardware Acceleration */
+				-webkit-transform: translateZ(0);
+				-moz-transform: translateZ(0);
+				-ms-transform: translateZ(0);
+				-o-transform: translateZ(0);
+				transform: translateZ(0);
+				-webkit-backface-visibility: hidden;
+				backface-visibility: hidden;
+				background-attachment: fixed;
+			}
+
+			#mask {
+				position: absolute;
+				top: 0;
+				left: 0;
+				overflow: hidden;
+				height: 100%;
+				width: 50%;
+				max-width: none;
+				border-right: solid 1px rgba(255, 255, 255, 0.3);
+				will-change: width;
+			}
+
+			#mask::after {
+				content: '';
+				position: absolute;
+				display: block;
+				top: 0;
+				right: 0;
+				width: 1px;
+				height: 100%;
+				background-color: rgba(0, 0, 0, 0.3);
+			}
+
+			#handle {
+				position: absolute;
+				height: 44px;
+				width: 44px;
+				/* center the element */
+				top: 50%;
+				left: 50%;
+				margin-left: -22px;
+				margin-top: -22px;
+				border-radius: 50%;
+				background: #dc717d url("arrows.svg") no-repeat center center;
+				cursor: col-resize;
+				box-shadow: 0 0 0 6px rgba(0, 0, 0, 0.2), 0 0 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+			}
+
+			#handle[active] {
+				background-color: #445b7c;
+			}
+
+			#vscrollbar,
+			#hscrollbar {
+				z-index: 1;
+				position: absolute;
+				background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 6px;
+			}
+
+			#vscrollhandle,
+			#hscrollhandle {
+				position: absolute;
+				background-color: rgba(255, 255, 255, 0.3);
+        border-radius: 4px;
+			}
+
+			#vscrollbar {
+				width: 12px;
+				top: 0;
+				right: 0;
+				bottom: 12px;
+			}
+
+			#vscrollhandle {
+				width: 10px;
+				right: 1px;
+				left: 1px;
+			}
+
+			#hscrollbar {
+				height: 12px;
+				right: 12px;
+				bottom: 0;
+				left: 0;
+			}
+
+			#hscrollhandle {
+				height: 10px;
+				top: 1px;
+				bottom: 1px;
+			}
+		</style>
+
+		<p>
+			Zoom:
+			<paper-slider id="zoom" min="1" max="100" value="{{scale}}"></paper-slider>
+			<button on-tap="_full">1:1</button>
+			<button on-tap="_toggle">toggle</button>
+		</p>
+
+		<div id="image">
+			<div id="vscrollbar">
+				<div id="vscrollhandle"></div>
+			</div>
+			<div id="hscrollbar">
+				<div id="hscrollhandle"></div>
+			</div>
+			<div class="mask"><img id="src" src="[[src]]" on-load="loaded"></div>
+			<div class="mask" id="mask" style="width:[[position]]%"><img id="with" src="[[with]]" hidden$="[[loading]]"></div>
+			<span id="handle" style="left:[[position]]%" active$="[[active]]"></span>
+		</div>
+	</template>
+
+	<script>
+    Polymer({
+      is: 'image-compare',
+
+      properties: {
+        src: String,
+        with: String,
+        position: Number,
+        active: {
+          type: Boolean,
+          reflectToAttribute: true
+        },
+        loading: {
+          type: Boolean,
+          value: true
+        },
+        scale: {
+          type: Number,
+          value: 1,
+          observer: '_scaleChanged'
+        },
+        top: {
+          type: Number,
+          value: 50
+        },
+        left: {
+          type: Number,
+          value: 50
+        },
+        _ratio: Number
+      },
+
+      listeners: {
+        // mouse events
+        'image.mousedown': '_mouseDown',
+        'image.mousemove': '_mouseMove',
+        'image.mouseup': '_mouseUp',
+
+        // touch events
+        'image.touchstart': '_touchStart',
+        'image.touchmove':  '_touchMove',
+        'image.touchend':   '_touchEnd'
+      },
+
+      attached: function() {
+        window.addEventListener('resize', this.resized.bind(this), { passive: true });
+      },
+
+      detached: function() {
+        window.removeEventListener('resize', this.resized.bind(this), { passive: true });
+      },
+
+      loaded: function(e) {
+        this._ratio = this.$.src.naturalWidth / this.$.src.naturalHeight;
+        this._sizeImages();
+      },
+
+      resized: function(e) {
+        this.debounce('resize', this._sizeImages, 1);
+      },
+
+      _sizeImages: function() {
+        this.$.src.width = this.$.with.width = this.clientWidth;
+        this.$.src.height = this.$.with.height = this.clientWidth / this._ratio;
+        this.loading = false;
+        this._setScroll();
+      },
+
+      _scaleChanged: function(newVal, oldVal) {
+        // cale max scale (1:1 image ratio)
+        var max = this.$.src.naturalWidth / this.clientWidth * 8;
+        var scale = max * (newVal / 100);
+        this.$.src.style.transform = 'scale(' + scale + ')';
+        this.$.with.style.transform = 'scale(' + scale + ')';
+        this._setScroll();
+      },
+
+      _setScroll: function() {
+        var r = this.$.src.getBoundingClientRect();
+
+        var hratio = this.$.src.width / r.width;
+        var vratio = this.$.src.height / r.height;
+
+        this.$.hscrollhandle.style.left = Math.abs((r.left - this.$.src.x) * hratio) + 'px';
+        this.$.hscrollhandle.style.width = (this.$.hscrollbar.clientWidth * hratio) + 'px';
+
+        this.$.vscrollhandle.style.top = Math.abs((r.top - this.$.src.y) * vratio) + 'px';
+        this.$.vscrollhandle.style.height = (this.$.vscrollbar.clientHeight * vratio) + 'px';
+      },
+
+      _full: function() {
+        // TODO: size to 1:1 pixel resolution (fix math)
+        var scale = this.$.src.naturalWidth / this.clientWidth;
+        this.$.src.style.transform = 'scale(' + scale + ')';
+        this.$.with.style.transform = 'scale(' + scale + ')';
+        var max = scale * 8;
+        this.scale = (scale / max) * 100;
+      },
+
+      _toggle: function() {
+        if (this.position) {
+          this.position = 0;
+        } else {
+          this.position = 100;
+        }
+      },
+
+      _mouseDown: function(e) {
+        this._dragStart(e);
+        this._drag(e);
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _mouseMove: function(e) {
+        this._drag(e);
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _mouseUp: function(e) {
+        this._dragStop();
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _touchStart: function(e) {
+        this._dragStart(e.targetTouches[0]);
+        this._drag(e.targetTouches[0]);
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _touchMove: function(e) {
+        this._drag(e.targetTouches[0]);
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _touchEnd: function(e) {
+        this._dragStop();
+        e.preventDefault();
+        e.stopPropagation();
+      },
+
+      _dragStart: function(e) {
+        var x = e.pageX - this.$.image.offsetLeft,
+            y = e.pageY - this.$.image.offsetTop;
+
+        if (x > this.$.image.offsetWidth - 12) {
+          this.vscrolling = true;
+        } else
+        if (y > this.$.image.offsetHeight - 12) {
+          this.hscrolling = true;
+        } else {
+          this.active = true;
+        }
+
+        this.lastX = x;
+        this.lastY = y;
+      },
+
+      _drag: function(e) {
+        var x = e.pageX - this.$.image.offsetLeft,
+            y = e.pageY - this.$.image.offsetTop;
+
+        if (this.vscrolling) {
+          this.top = y / this.offsetHeight * 100;
+          this.$.src.style.transformOrigin = this.left + '% ' + this.top + '%';
+          this.$.with.style.transformOrigin = this.left + '% ' + this.top + '%';
+          this._setScroll();
+        } else
+        if (this.hscrolling) {
+          this.left = x / this.offsetWidth * 100;
+          this.$.src.style.transformOrigin = this.left + '% ' + this.top + '%';
+          this.$.with.style.transformOrigin = this.left + '% ' + this.top + '%';
+          this._setScroll();
+        } else
+        if (this.active) {
+          this.position = x / this.offsetWidth * 100;
+        }
+
+        this.lastX = x;
+        this.lastY = y;
+      },
+
+      _dragStop: function() {
+        this.active = false;
+        this.vscrolling = false;
+        this.hscrolling = false;
+      }
+
+    });
+  </script>
+</dom-module>
