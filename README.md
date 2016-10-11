@@ -22,3 +22,5 @@ Example of use:
     <image-compare src="original.jpg" with="replacement.jpg"></image-compare>
 
 NOTE: Both images should be the same dimensions.
+
+Source images / some styling based on [this article](https://codyhouse.co/gem/css-jquery-image-comparison-slider/)

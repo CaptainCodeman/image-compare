@@ -151,7 +151,7 @@ Image comparison element
 
 		<p>
 			Zoom:
-			<paper-slider id="zoom" min="0" max="100" value="{{scale}}"></paper-slider>
+			<paper-slider id="zoom" min="1" max="100" value="{{scale}}"></paper-slider>
 			<button on-tap="_full">1:1</button>
 			<button on-tap="_toggle">toggle</button>
 		</p>
@@ -239,8 +239,8 @@ Image comparison element
 
       _scaleChanged: function(newVal, oldVal) {
         // cale max scale (1:1 image ratio)
-        var max = this.$.src.naturalWidth / this.clientWidth * 8 - 1;
-        var scale = max * (newVal / 100) + 1;
+        var max = this.$.src.naturalWidth / this.clientWidth * 8;
+        var scale = max * (newVal / 100);
         this.$.src.style.transform = 'scale(' + scale + ')';
         this.$.with.style.transform = 'scale(' + scale + ')';
         this._setScroll();
@@ -262,9 +262,10 @@ Image comparison element
       _full: function() {
         // TODO: size to 1:1 pixel resolution (fix math)
         var scale = this.$.src.naturalWidth / this.clientWidth;
-        var max = scale * 8 - 1;
-        this.scale = (scale / max) * 100 - 1;
-        console.log(max, scale, this.$.src.naturalWidth, this.clientWidth);
+        this.$.src.style.transform = 'scale(' + scale + ')';
+        this.$.with.style.transform = 'scale(' + scale + ')';
+        var max = scale * 8;
+        this.scale = (scale / max) * 100;
       },
 
       _toggle: function() {
